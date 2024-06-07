@@ -1,0 +1,22 @@
+model:
+  name: mnist64fc
+  path: models/custom/64x4_scratch.model
+data:
+  dataset: MNIST
+  start: 0
+  end: 5
+  std: [1.]
+  mean: [0.]
+specification:
+  epsilon: 0.05
+  norm: .inf
+attack:
+  pgd_order: skip
+solver:
+  batch_size: 4096
+  beta-crown:
+    iteration: 20
+bab:
+  timeout: 180
+# naps:
+#   source_file: naps/64x4_scratch_adv_delta99.json

@@ -1707,3 +1707,17 @@ class Step_carvana(nn.Module):
         x = x.sum(1, keepdim=True)
 
         return x
+
+def mnist64fc():
+    return nn.Sequential(
+    nn.Flatten(),
+    nn.Linear(784, 64),
+    nn.ReLU(),
+    nn.Linear(64, 64),
+    nn.ReLU(),
+    nn.Linear(64, 64),
+    nn.ReLU(),
+    nn.Linear(64, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10),
+)
