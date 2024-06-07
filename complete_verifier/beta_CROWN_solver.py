@@ -33,11 +33,11 @@ from load_model import Customized
 from prune import PruneAfterCROWN
 from domain_updater import (DomainUpdater, DomainUpdaterSimple)
 from heuristics.nonlinear import precompute_A
-
+from nap_specs import NAPConstrainedBoundedModule
 
 class LiRPANet:
     def __init__(self, model_ori, in_size, c=None, device=None,
-                 cplex_processes=None):
+                 cplex_processes=None, nap_path=None):
         """
         convert pytorch model to auto_LiRPA module
         """
@@ -50,40 +50,78 @@ class LiRPANet:
         self.input_shape = in_size
         self.device = device or general_args['device']
         model_ori_state_dict = copy.deepcopy(model_ori.state_dict())
-        self.net = BoundedModule(
-            model_ori, torch.zeros(in_size, device=self.device),
-            bound_opts={
-                'deterministic': general_args['deterministic'],
-                'conv_mode': general_args['conv_mode'],
-                'sparse_features_alpha': general_args['sparse_alpha'],
-                'sparse_spec_alpha': general_args['sparse_alpha'],
-                'sparse_intermediate_bounds': general_args['sparse_interm'],
-                'crown_batch_size': solver_args['crown']['batch_size'],
-                'max_crown_size': solver_args['crown']['max_crown_size'],
-                'forward_refinement': solver_args['forward']['refine'],
-                'dynamic_forward': solver_args['forward']['dynamic'],
-                'forward_max_dim': solver_args['forward']['max_dim'],
-                'use_full_conv_alpha': solver_args['alpha-crown']['full_conv_alpha'],
-                'disable_optimization': solver_args['alpha-crown']['disable_optimization'],
-                'fixed_reducemax_index': True,
-                'matmul': {'share_alphas': solver_args['alpha-crown']['matmul_share_alphas']},
-                'tanh': {'loose_threshold': bab_args['branching']['nonlinear_split']['loose_tanh_threshold']},
-                'relu': solver_args['crown']['relu_option'],
-                'buffers': {'has_batchdim': general_args['buffer_has_batchdim']},
-                'optimize_bound_args': {
-                    'apply_output_constraints_to': solver_args['invprop']['apply_output_constraints_to'],
-                    'tighten_input_bounds': solver_args['invprop']['tighten_input_bounds'],
-                    'best_of_oc_and_no_oc': solver_args['invprop']['best_of_oc_and_no_oc'],
-                    'directly_optimize': solver_args['invprop']['directly_optimize'],
-                    'oc_lr': solver_args['invprop']['oc_lr'],
-                    'share_gammas': solver_args['invprop']['share_gammas'],
+        if not nap_path:
+            self.net = BoundedModule(
+                model_ori, torch.zeros(in_size, device=self.device),
+                bound_opts={
+                    'deterministic': general_args['deterministic'],
+                    'conv_mode': general_args['conv_mode'],
+                    'sparse_features_alpha': general_args['sparse_alpha'],
+                    'sparse_spec_alpha': general_args['sparse_alpha'],
+                    'sparse_intermediate_bounds': general_args['sparse_interm'],
+                    'crown_batch_size': solver_args['crown']['batch_size'],
+                    'max_crown_size': solver_args['crown']['max_crown_size'],
+                    'forward_refinement': solver_args['forward']['refine'],
+                    'dynamic_forward': solver_args['forward']['dynamic'],
+                    'forward_max_dim': solver_args['forward']['max_dim'],
+                    'use_full_conv_alpha': solver_args['alpha-crown']['full_conv_alpha'],
+                    'disable_optimization': solver_args['alpha-crown']['disable_optimization'],
+                    'fixed_reducemax_index': True,
+                    'matmul': {'share_alphas': solver_args['alpha-crown']['matmul_share_alphas']},
+                    'tanh': {'loose_threshold': bab_args['branching']['nonlinear_split']['loose_tanh_threshold']},
+                    'relu': solver_args['crown']['relu_option'],
+                    'buffers': {'has_batchdim': general_args['buffer_has_batchdim']},
+                    'optimize_bound_args': {
+                        'apply_output_constraints_to': solver_args['invprop']['apply_output_constraints_to'],
+                        'tighten_input_bounds': solver_args['invprop']['tighten_input_bounds'],
+                        'best_of_oc_and_no_oc': solver_args['invprop']['best_of_oc_and_no_oc'],
+                        'directly_optimize': solver_args['invprop']['directly_optimize'],
+                        'oc_lr': solver_args['invprop']['oc_lr'],
+                        'share_gammas': solver_args['invprop']['share_gammas'],
+                    },
+                    "optimize_graph": {
+                        "optimizer": eval(model_args['optimize_graph']) if model_args['optimize_graph'] else None,
+                    }
                 },
-                "optimize_graph": {
-                    "optimizer": eval(model_args['optimize_graph']) if model_args['optimize_graph'] else None,
-                }
-            },
-            device=self.device
-        )
+                device=self.device
+            )
+        else:
+            self.net = NAPConstrainedBoundedModule(
+                model_ori, torch.zeros(in_size, device=self.device),
+                nap_path,
+                bound_opts={
+                    'deterministic': general_args['deterministic'],
+                    'conv_mode': general_args['conv_mode'],
+                    'sparse_features_alpha': general_args['sparse_alpha'],
+                    'sparse_spec_alpha': general_args['sparse_alpha'],
+                    'sparse_intermediate_bounds': general_args['sparse_interm'],
+                    'crown_batch_size': solver_args['crown']['batch_size'],
+                    'max_crown_size': solver_args['crown']['max_crown_size'],
+                    'forward_refinement': solver_args['forward']['refine'],
+                    'dynamic_forward': solver_args['forward']['dynamic'],
+                    'forward_max_dim': solver_args['forward']['max_dim'],
+                    'use_full_conv_alpha': solver_args['alpha-crown']['full_conv_alpha'],
+                    'disable_optimization': solver_args['alpha-crown']['disable_optimization'],
+                    'fixed_reducemax_index': True,
+                    'matmul': {'share_alphas': solver_args['alpha-crown']['matmul_share_alphas']},
+                    'tanh': {'loose_threshold': bab_args['branching']['nonlinear_split']['loose_tanh_threshold']},
+                    'relu': solver_args['crown']['relu_option'],
+                    'buffers': {'has_batchdim': general_args['buffer_has_batchdim']},
+                    'optimize_bound_args': {
+                        'apply_output_constraints_to': solver_args['invprop']['apply_output_constraints_to'],
+                        'tighten_input_bounds': solver_args['invprop']['tighten_input_bounds'],
+                        'best_of_oc_and_no_oc': solver_args['invprop']['best_of_oc_and_no_oc'],
+                        'directly_optimize': solver_args['invprop']['directly_optimize'],
+                        'oc_lr': solver_args['invprop']['oc_lr'],
+                        'share_gammas': solver_args['invprop']['share_gammas'],
+                    },
+                    "optimize_graph": {
+                        "optimizer": eval(model_args['optimize_graph']) if model_args['optimize_graph'] else None,
+                    }
+                },
+                device=self.device
+            )
+            self.net.set_label((self.c[0][0] == 1.).nonzero()[0].item())
         self.net = eval(general_args['graph_optimizer'])(self.net)
         self.root = self.net[self.net.root_names[0]]
 
