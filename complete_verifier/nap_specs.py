@@ -151,3 +151,9 @@ class NAPConstrainedBoundedModule(BoundedModule):
 
 
         return res
+    
+    def get_nap_neurons(self):
+        res = []
+        res.extend(self.naps[self.label]['A']['indices'])
+        res.extend(self.naps[self.label]['D']['indices'])
+        return res

@@ -32,6 +32,7 @@ from utils import (print_splitting_decisions, print_average_branching_neurons,
 from prune import prune_alphas
 import arguments
 
+NAP_DEBUG = True
 
 def get_split_depth(batch_size, min_batch_size):
     # Here we check the length of current domain list.
@@ -83,6 +84,13 @@ def split_domain(net, domains, d, batch, impl_params=None, stats=None,
         'decision': branching_decision,
         'points': branching_points,
     }
+
+    # Checking if the neurons in the NAP specification are not considered unstable
+    if NAP_DEBUG:
+        nap_neurons = net.net.get_nap_neurons()
+        for neuron in split['decision']:
+            assert not neuron in nap_neurons, f"NAP neuron {neuron}, considered unstable!"
+
     if split['points'] is not None and not bab_args['interm_transfer']:
         raise NotImplementedError(
             'General branching points are not supported '
