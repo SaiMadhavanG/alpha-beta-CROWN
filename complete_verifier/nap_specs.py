@@ -4,6 +4,8 @@ from auto_LiRPA import BoundedModule
 import torch
 import json
 
+# NAP_DEBUG = True
+
 class NAPConstrainedBoundedModule(BoundedModule):
     """
         A subclass of auto_LiRPA.BoundedModule, that inserts NAP Constraints whenever 'compute_bounds()' is called
@@ -99,8 +101,8 @@ class NAPConstrainedBoundedModule(BoundedModule):
             if interm_bounds:
                 for layer in self.layers_for_nap:
                     if layer in interm_bounds:
-                        interm_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]] = 0.
-                        interm_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]] = 0.
+                        interm_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]] = torch.maximum(interm_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]], torch.tensor(0.))
+                        interm_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]] = torch.minimum(interm_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]], torch.tensor(0.))
                     else:
                         raise Exception("I sincerely hope this error never occurs; interm")
             if reference_bounds:
@@ -121,7 +123,7 @@ class NAPConstrainedBoundedModule(BoundedModule):
                     
 
         
-        return super().compute_bounds(
+        res = super().compute_bounds(
             x , aux , C , method, IBP,
             forward, bound_lower , bound_upper , reuse_ibp,
             reuse_alpha, return_A, needed_A_dict,
@@ -132,3 +134,20 @@ class NAPConstrainedBoundedModule(BoundedModule):
             cutter , decision_thresh ,
             update_mask , ibp_nodes , cache_bounds
         )
+
+        # Sanity check to ensure the required elements have indeed been set to zero
+        # if NAP_DEBUG:
+        #     try:
+        #         bounds = self.save_intermediate()
+
+        #         for layer in self.layers_for_nap:
+        #             lb_lt_zero = (bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]] < 0.).sum().item()
+        #             ub_gt_zero = (bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]] > 0.).sum().item()
+        #             assert lb_lt_zero == 0, f"NAP sanity check assertion failed for layer: {layer} lowerbounds; {lb_lt_zero}"
+        #             assert ub_gt_zero == 0, f"NAP sanity check assertion failed for layer: {layer} upperbounds; {ub_gt_zero}"
+        #         print("sucess")
+        #     except:
+        #         print("fail :(")
+
+
+        return res
