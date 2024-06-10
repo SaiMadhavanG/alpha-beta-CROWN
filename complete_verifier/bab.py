@@ -32,7 +32,7 @@ from utils import (print_splitting_decisions, print_average_branching_neurons,
 from prune import prune_alphas
 import arguments
 
-NAP_DEBUG = False
+NAP_DEBUG = True
 
 def get_split_depth(batch_size, min_batch_size):
     # Here we check the length of current domain list.
