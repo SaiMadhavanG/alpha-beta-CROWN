@@ -45,8 +45,8 @@ from cuts.cut_utils import terminate_mip_processes, terminate_mip_processes_by_c
 from lp_test import compare_optimized_bounds_against_lp_bounds
 
 # TODO Move this to config
-NAP_PATH = "./naps/64x4_scratch_delta90.json"
-# NAP_PATH = None
+# NAP_PATH = "./naps/64x4_scratch_delta90.json"
+NAP_PATH = None
 
 
 class ABCROWN:

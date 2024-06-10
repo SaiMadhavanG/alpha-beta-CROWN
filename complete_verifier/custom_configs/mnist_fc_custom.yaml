@@ -1,6 +1,6 @@
 model:
   name: mnist64fc
-  path: models/custom/64x4_scratch.model
+  path: models/custom/mnist_fc_64x4_adv_1.model
 data:
   dataset: MNIST
   start: 0
@@ -8,7 +8,7 @@ data:
   std: [1.]
   mean: [0.]
 specification:
-  epsilon: 0.05
+  epsilon: 0.1
   norm: .inf
 attack:
   pgd_order: skip
