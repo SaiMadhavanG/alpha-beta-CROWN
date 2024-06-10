@@ -4,7 +4,7 @@ model:
 data:
   dataset: MNIST
   start: 0
-  end: 5
+  end: 10
   std: [1.]
   mean: [0.]
 specification:
@@ -14,9 +14,5 @@ attack:
   pgd_order: skip
 solver:
   batch_size: 4096
-  beta-crown:
-    iteration: 20
 bab:
   timeout: 180
-# naps:
-#   source_file: naps/64x4_scratch_adv_delta99.json
