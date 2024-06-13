@@ -1,8 +1,9 @@
 # Goal: To create a subclass of auto_LiRPA.BoundedModule, that inserts NAP Constraints whenever 'compute_bounds' is called
 
-from auto_LiRPA import BoundedModule
+from auto_LiRPA import BoundedModule, BoundedTensor
 import torch
 import json
+from auto_LiRPA.perturbations import PerturbationLpNorm
 
 # NAP_DEBUG = True
 
@@ -21,9 +22,8 @@ class NAPConstrainedBoundedModule(BoundedModule):
         self.nap_file_path = nap_file_path
         self.naps, self.naps_config = self.parse_naps(self.nap_file_path)
         self.label = None
-        # self.layers_for_nap = self.get_layers_requiring_bounds()
-        # TODO Hardcoded for now, change layer representation in NAP and translate
-        self.layers_for_nap = ['/input', '/input.3', '/input.7', '/input.11']
+        self.layers_for_nap = self.get_layer_names()
+        print(self.layers_for_nap)
 
         self.masks = self.create_masks()
 
@@ -157,3 +157,12 @@ class NAPConstrainedBoundedModule(BoundedModule):
         res.extend(self.naps[self.label]['A']['indices'])
         res.extend(self.naps[self.label]['D']['indices'])
         return res
+    
+    def get_layer_names(self):
+        x = torch.empty(self.naps_config['input_shape'])
+        norm = float('inf')
+        eps = 0.1
+        ptb = PerturbationLpNorm(eps, norm)
+        bounded_x = BoundedTensor(x, ptb).to(self.device)
+        super().compute_bounds(bounded_x)
+        return [node.name for node in self.get_layers_requiring_bounds()]

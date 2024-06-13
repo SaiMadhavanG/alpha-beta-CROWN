@@ -15,4 +15,4 @@ attack:
 solver:
   batch_size: 4096
 bab:
-  timeout: 180
+  timeout: 500
