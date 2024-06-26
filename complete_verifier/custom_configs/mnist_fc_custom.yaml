@@ -4,14 +4,14 @@ model:
 data:
   dataset: MNIST
   start: 0
-  end: 10
+  end: 20
   std: [1.]
   mean: [0.]
 specification:
-  epsilon: 0.1
+  epsilon: 0.2
   norm: .inf
 attack:
-  pgd_order: skip
+  pgd_order: after
 solver:
   batch_size: 4096
 bab:
