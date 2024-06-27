@@ -4,6 +4,7 @@ from auto_LiRPA import BoundedModule, BoundedTensor
 import torch
 import json
 from auto_LiRPA.perturbations import PerturbationLpNorm
+import arguments
 
 # NAP_DEBUG = True
 
@@ -27,11 +28,15 @@ class NAPConstrainedBoundedModule(BoundedModule):
 
         self.masks = self.create_masks()
 
+        arguments.Globals['nap_masks'] = self.masks
+        arguments.Globals['nap_layers'] = self.naps_config['layers']
+
         print("NAP Masks initialized")
 
     def set_label(self, label):
         # TODO exception handling
         self.label = str(label)
+        arguments.Globals['nap_label'] = self.label
 
     @classmethod
     def parse_naps(self, file_path):

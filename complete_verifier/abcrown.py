@@ -510,6 +510,10 @@ class ABCROWN:
             print('Using BoundedModule for attack for this model with JacobianOP')
             model = LiRPANet(model_ori, in_size=x.shape, nap_path = NAP_PATH).net
         else:
+            if arguments.Config['attack']['attack_func'] == "attack_with_naps":
+                input_x, specs = vnnlib[0]
+                c = torch.tensor(specs[0][0]).unsqueeze(0)
+                LiRPANet(model_ori, in_size=x.shape, c=c, nap_path = NAP_PATH)
             model = model_ori
         return attack(model, x, vnnlib, verified_status, verified_success)
 

@@ -315,7 +315,7 @@ def default_pgd_loss(origin_out, output, C_mat, rhs_mat, cond_mat, same_number_c
     return loss, loss_gamma
 
 
-def test_conditions(input, output, C_mat, rhs_mat, cond_mat, same_number_const, data_max, data_min, return_success_idx=False):
+def test_conditions(input, output, C_mat, rhs_mat, cond_mat, same_number_const, data_max, data_min, return_success_idx=False, naps=None, model=None):
     '''
     Whether the output satisfies the specifiction conditions.
     If the output satisfies the specification for adversarial examples, this function returns True, otherwise False.
@@ -343,7 +343,11 @@ def test_conditions(input, output, C_mat, rhs_mat, cond_mat, same_number_const, 
         valid = valid.all(-1).view(valid.shape[0], valid.shape[1], len(cond_mat[0]), -1)
         # [num_example, restarts, num_or_spec, num_and_spec]
 
-        res = ((cond.amax(dim=-1, keepdim=True) < 0.0) & valid).any(dim=-1).any(dim=-1).any(dim=-1)
+        if naps:
+            naps_valid = check_NAP_conditions(input, model, arguments.Globals['nap_masks'][arguments.Globals['nap_label']], arguments.Globals['nap_layers'])
+            res = ((cond.amax(dim=-1, keepdim=True) < 0.0) & valid & naps_valid.to(valid)).any(dim=-1).any(dim=-1).any(dim=-1)
+        else:
+            res = ((cond.amax(dim=-1, keepdim=True) < 0.0) & valid).any(dim=-1).any(dim=-1).any(dim=-1)
 
         if res.all() and return_success_idx:
             # invalid examples will not be selected by torch.min, shape: [num_example, restarts, num_all_spec, output_dim]
@@ -406,10 +410,10 @@ def test_conditions(input, output, C_mat, rhs_mat, cond_mat, same_number_const, 
 
 
 def default_early_stop_condition(inputs, output, C_mat, rhs_mat, cond_mat, same_number_const,
-    data_max, data_min, model, indices, num_or_spec, return_success_idx=False):
+    data_max, data_min, model, indices, num_or_spec, return_success_idx=False, naps=None):
 
     return test_conditions(inputs, output, C_mat, rhs_mat, cond_mat, same_number_const,
-        data_max, data_min, return_success_idx)
+        data_max, data_min, return_success_idx, naps=naps, model=model)
 
 
 def build_conditions(x, list_target_label_arrays):
@@ -772,6 +776,197 @@ def pgd_attack_with_general_specs(model, X, data_min, data_max, C_mat, rhs_mat,
         return best_delta, delta, best_loss, early_stopped
     else:
         return best_delta, delta, best_loss
+    
+
+def pgd_attack_with_naps(model, X, data_min, data_max, C_mat, rhs_mat,
+                                  cond_mat, same_number_const, alpha,
+                                  use_adam=True, normalize=lambda x: x,
+                                  initialization='uniform', GAMA_loss=False,
+                                  num_restarts=None, pgd_steps=None,
+                                  only_replicate_restarts=False,
+                                  return_early_stopped=False):
+
+    r''' the functional function for pgd attack
+
+    Args:
+        model (torch.nn.Module): PyTorch module under attack.
+
+        x (torch.tensor): Input image (x_0).
+
+        data_min (torch.tensor): Lower bounds of data input. (e.g., 0 for mnist)
+
+        data_max (torch.tensor): Lower bounds of data input. (e.g., 1 for mnist)
+
+        C_mat (torch.tensor): [num_example, num_spec, num_output]
+
+        rhs_mat (torch.tensor): [num_example, num_spec]
+
+        cond_mat (list): [[] * num_example] mark the group of conditions
+
+        same_number_const (bool): if same_number_const is True, it means that there are same number of and specifications in every or specification group.
+
+        alpha (float): alpha for pgd attack
+    '''
+    device = X.device
+    attack_iters = arguments.Config["attack"]["pgd_steps"] if pgd_steps is None else pgd_steps
+    num_restarts = arguments.Config["attack"]["pgd_restarts"] if num_restarts is None else num_restarts
+
+    lr_decay=arguments.Config["attack"]["pgd_lr_decay"]
+    early_stop=arguments.Config["attack"]["pgd_early_stop"]
+
+    if only_replicate_restarts:
+        input_shape = (X.shape[0], *X.shape[2:])
+    else:
+        input_shape = X.size()
+    num_classes = C_mat.shape[-1]
+
+    num_or_spec = len(cond_mat[0])
+
+    extra_dim = (num_restarts, num_or_spec) if only_replicate_restarts == False else (num_restarts,)
+    # shape of x: [num_example, *shape_of_x]
+
+    best_loss = torch.empty(X.size(0), device=device).fill_(float("-inf"))
+    best_delta = torch.zeros(input_shape, device=device)
+
+    data_min = data_min.unsqueeze(1)
+    data_max = data_max.unsqueeze(1)
+    # [1, 1, num_spec, *input_shape]
+
+    X_ndim = X.ndim
+
+    X = X.view(X.shape[0], *[1] * len(extra_dim), *X.shape[1:])
+    delta_lower_limit = data_min - X
+    delta_upper_limit = data_max - X
+
+    X = X.expand(-1, *extra_dim, *(-1,) * (X_ndim - 1))
+    extra_dim = (X.shape[1], X.shape[2])
+
+    if initialization == 'osi':
+        # X_init = OSI_init(model, X, y, epsilon, alpha, num_classes, iter_steps=attack_iters, extra_dim=extra_dim, upper_limit=upper_limit, lower_limit=lower_limit)
+        osi_start_time = time.time()
+        X_init = OSI_init_C(model, X, alpha, C_mat.shape[-1], attack_iters, data_min, data_max)
+        osi_time = time.time() - osi_start_time
+        print(f'diversed PGD initialization time: {osi_time:.4f}')
+    if initialization == 'boundary':
+        boundary_adv_examples = boundary_attack(model, X[:,0,...].view(-1, *input_shape[1:]), data_min.view(*input_shape), data_max.view(*input_shape))
+        if boundary_adv_examples is not None:
+            X_init = boundary_adv_examples.view(X.shape[0], -1, *X.shape[2:])
+            X = X[:,:X_init.shape[1],...]
+            extra_dim = (X.shape[1], X.shape[2])
+        else:
+            initialization = 'uniform'
+
+    gama_lambda = arguments.Config["attack"]["gama_lambda"]
+
+    if initialization == 'osi' or initialization == 'boundary':
+        delta = (X_init - X).detach().requires_grad_()
+    elif initialization == 'uniform':
+        delta = (torch.empty_like(X).uniform_() * (delta_upper_limit - delta_lower_limit) + delta_lower_limit).requires_grad_()
+    elif initialization == 'none':
+        delta = torch.zeros_like(X).requires_grad_()
+    else:
+        raise ValueError(f"Unknown initialization method {initialization}")
+
+    if use_adam:
+        opt = AdamClipping(params=[delta], lr=alpha)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, lr_decay)
+
+    early_stopped = False
+
+    for _ in range(attack_iters):
+        inputs = normalize(X + delta)
+        output = model(inputs.view(-1, *input_shape[1:])).view(
+            input_shape[0], *extra_dim, num_classes)
+
+        if GAMA_loss:
+            # Output on original model is needed if gama loss is used.
+            origin_out = torch.softmax(model(normalize(X.reshape(-1, *input_shape[1:]))), 1)
+            origin_out = origin_out.view(output.shape)
+        else:
+            origin_out = None
+
+        loss, loss_gama = eval(arguments.Config["attack"]["pgd_loss"])(
+            origin_out, output, C_mat, rhs_mat,
+            cond_mat, same_number_const,
+            gama_lambda if GAMA_loss else 0.0,
+            mode=arguments.Config['attack']['pgd_loss_mode'], model=model)
+        gama_lambda *= arguments.Config["attack"]["gama_decay"]
+        # shape of loss: [num_example, num_restarts, num_or_spec]
+        # or float when gama_lambda > 0
+
+        loss_gama.sum().backward()
+
+        with torch.no_grad():
+            # Save the best loss so far.
+            if same_number_const:
+                loss = loss.amin(-1)
+                # loss has shape [num_example, num_restarts, num_or_spec].
+                # margins = (runnerup - groundtruth).view(groundtruth.size(0), -1)
+            else:
+                group_C = torch.zeros(len(cond_mat[0]), C_mat.shape[1]).to(loss.device) # [num_or_spec, num_total_spec]
+                x_index = []
+                y_index = []
+                index = 0
+                for i, cond in enumerate(cond_mat[0]):
+                    for _ in range(cond):
+                        x_index.append(i)
+                        y_index.append(index)
+                        index += 1
+                group_C[x_index, y_index] = 1.0
+
+                # loss shape: [batch_size, num_restarts, num_total_spec]
+                loss = group_C.matmul(loss.unsqueeze(-1)).squeeze(-1)
+                # loss shape: [batch_size, num_restarts, num_or_spec]
+
+            loss = loss.view(loss.shape[0], -1)
+            # all_loss and indices have shape (batch, ),
+            # and this is the best loss over all restarts and number of classes.
+            all_loss, indices = loss.max(1)
+            # delta has shape (batch, restarts, num_class-1, c, h, w).
+            # For each batch element, we want to select from the best over
+            # (restarts, num_classes-1) dimension.
+            # delta_targeted has shape (batch, c, h, w).
+            delta_targeted = delta.view(
+                delta.size(0), -1, *input_shape[1:]
+            ).gather(
+                dim=1, index=indices.view(
+                    -1,1,*(1,) * (len(input_shape) - 1)).expand(
+                        -1,-1,*input_shape[1:])
+            ).squeeze(1)
+
+            best_delta[all_loss >= best_loss] = delta_targeted[all_loss >= best_loss]
+            best_loss = torch.max(best_loss, all_loss)
+
+        if early_stop:
+            if eval(arguments.Config["attack"]["early_stop_condition"])(inputs, output, C_mat, rhs_mat,
+                    cond_mat, same_number_const, data_max, data_min, model, indices, num_or_spec, naps=True).all():
+                print("pgd early stop")
+                early_stopped = True
+                break
+
+        if use_adam:
+            opt.step(clipping=True, lower_limit=delta_lower_limit,
+                     upper_limit=delta_upper_limit, sign=1)
+            opt.zero_grad(set_to_none=True)
+            scheduler.step()
+        else:
+            d = delta + alpha * torch.sign(delta.grad)
+            d = torch.max(torch.min(d, delta_upper_limit), delta_lower_limit)
+            delta = d.detach().requires_grad_()
+
+    if not early_stopped and 'Customized' in arguments.Config["attack"]["early_stop_condition"]:
+        test_input = X[:, 0, 0, :] + best_delta
+        test_output = model(test_input)
+        test_input = test_input.unsqueeze(0).unsqueeze(0)
+        test_output = test_output.unsqueeze(0).unsqueeze(0)
+        if not test_conditions(test_input, test_output, C_mat, rhs_mat, cond_mat,
+                           same_number_const, data_max, data_min, naps=True, model=model).all():
+            best_loss = torch.full(size=(1,), fill_value=float('-inf'), device=best_loss.device)
+
+    if return_early_stopped:
+        return best_delta, delta, best_loss, early_stopped
+    else:
+        return best_delta, delta, best_loss    
 
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, num_restarts,
@@ -1304,6 +1499,128 @@ def attack_with_general_specs(model, x, data_min, data_max,
     else:
         print("PGD attack failed")
         return False, attack_image.detach(), attack_margin.detach(), all_adv_candidates
+    
+
+def attack_with_naps(model, x, data_min, data_max,
+                              list_target_label_arrays,
+                              initialization="uniform", GAMA_loss=False):
+    r""" Interface to PGD attack.
+
+    Args:
+        model (torch.nn.Module): PyTorch module under attack.
+
+        x (torch.tensor): Input image (x_0).
+        [batch_size, *x_shape]
+
+        data_min (torch.tensor): Lower bounds of data input. (e.g., 0 for mnist)
+        shape: [batch_size, spec_num, *input_shape]
+
+        data_max (torch.tensor): Lower bounds of data input. (e.g., 1 for mnist)
+        shape: [batch_size, spec_num, *input_shape]
+
+        list_target_label_arrays: a list of list of tuples:
+                We have N examples, and list_target_label_arrays is a list containing N lists.
+                Each inner list contains the target_label_array for an example:
+                    [(prop_mat_1, prop_rhs_1), (prop_mat_2, prop_rhs_2), ..., (prop_mat_n, prop_rhs_n)]
+                    prop_mat is a numpy array with shape [num_and, num_output], prop_rhs is a numpy array with shape [num_and]
+
+        initialization (string): initialization of PGD attack, chosen from 'uniform' and 'osi'
+
+        GAMA_loss (boolean): whether to use GAMA (Guided adversarial attack) loss in PGD attack
+    """
+    attack_start_time = time.time()
+    assert arguments.Config["specification"]["norm"] == np.inf, print('We only support Linf-norm attack.')
+    use_adam = True
+
+    device = x.device
+
+    alpha = arguments.Config["attack"]["pgd_alpha"]
+    alpha_scale = arguments.Config["attack"]["pgd_alpha_scale"]
+    if alpha_scale:
+        alpha = (data_max - data_min) * float(alpha)
+        use_adam = False
+    else:
+        if alpha == 'auto':
+            max_eps = torch.max(data_max - data_min).item()/2
+            alpha = max_eps / 4
+        else:
+            alpha = float(alpha)
+
+    print(f'Attack parameters: initialization={initialization}, steps={arguments.Config["attack"]["pgd_steps"]}, restarts={arguments.Config["attack"]["pgd_restarts"]}, alpha={alpha}, initialization={initialization}, GAMA={GAMA_loss}')
+
+    # Set all parameters without gradient, this can speedup things significantly.
+    grad_status = {}
+    for p in model.parameters():
+        grad_status[p] = p.requires_grad
+        p.requires_grad_(False)
+
+    output = model(x).detach()
+
+    # FIXME conflict with clean prediction
+    # if arguments.Config['general']['save_output']:
+    #     arguments.Globals['out']['pred'] = output.cpu()
+
+    print('Model output of first 5 examples:\n', output[:5])
+
+    C_mat, rhs_mat, cond_mat, same_number_const = build_conditions(x, list_target_label_arrays)
+
+    output = output.unsqueeze(1).unsqueeze(1).repeat(1, 1, len(cond_mat[0]), 1)
+
+    if test_conditions(x, output, C_mat, rhs_mat, cond_mat, same_number_const,
+                       data_max.unsqueeze(1), data_min.unsqueeze(1), naps=True, model=model).all():
+        print("Clean prediction incorrect, attack skipped.")
+        # Obtain attack margin.
+        attack_image, _, attack_margin = eval(arguments.Config["attack"]["adv_example_finalizer"])(model, x, torch.zeros_like(x), data_max, data_min, C_mat, rhs_mat, cond_mat)
+        return True, attack_image.detach(), attack_margin.detach(), None
+
+    data_min = data_min.to(device)
+    data_max = data_max.to(device)
+    rhs_mat = rhs_mat.to(device)
+    C_mat = C_mat.to(device)
+    num_restarts = arguments.Config["attack"]["pgd_restarts"]
+    batch_size = arguments.Config["attack"]["pgd_batch_size"]
+    best_deltas = None
+    best_loss = None
+    for _ in tqdm(range((num_restarts + batch_size - 1) // batch_size)):
+        best_deltas_, last_deltas, best_loss_, early_stopped = pgd_attack_with_naps(
+            model, x, data_min, data_max, C_mat, rhs_mat, cond_mat, same_number_const, alpha,
+            initialization=initialization, GAMA_loss=GAMA_loss,
+            use_adam=use_adam, num_restarts=min(batch_size, num_restarts), return_early_stopped=True)
+        num_restarts -= batch_size
+        if best_deltas is None:
+            best_deltas = best_deltas_
+            best_loss = best_loss_
+        else:
+            best_deltas[best_loss_ >= best_loss] = best_deltas_[
+                best_loss_ >= best_loss]
+            best_loss = torch.max(best_loss, best_loss_)
+        if early_stopped:
+            break
+
+    attack_image, attack_output, attack_margin = eval(arguments.Config["attack"]["adv_example_finalizer"])(
+        model, x, best_deltas, data_max, data_min, C_mat, rhs_mat, cond_mat)
+
+    # Adversarial images/candidates in all restarts and targets. Useful for BaB-attack.
+    # last_deltas has shape [batch, num_restarts, specs, c, h, w]. Need the extra num_restarts and specs dim.
+    # x has shape [batch, c, h, w] and data_min/data_max has shape [batch, num_specs, c, h, w].
+    all_adv_candidates = torch.max(
+            torch.min(x.unsqueeze(1).unsqueeze(1) + last_deltas,
+                data_max.unsqueeze(1)), data_min.unsqueeze(1))
+
+    # Go back to original requires_grad status.
+    for p in model.parameters():
+        p.requires_grad_(grad_status[p])
+
+    attack_time = time.time() - attack_start_time
+    print(f'Attack finished in {attack_time:.4f} seconds.')
+    if test_conditions(attack_image.unsqueeze(1), attack_output.unsqueeze(1),
+                       C_mat, rhs_mat, cond_mat, same_number_const,
+                       data_max, data_min, naps=True, model=model).all():
+        print("PGD attack succeeded!")
+        return True, attack_image.detach(), attack_margin.detach(), all_adv_candidates
+    else:
+        print("PGD attack failed")
+        return False, attack_image.detach(), attack_margin.detach(), all_adv_candidates
 
 
 def pgd_attack(dataset, model, x, max_eps, data_min, data_max, vnnlib=None, y=None,
@@ -1614,4 +1931,39 @@ def attack_after_crown(lb, vnnlib, model_ori, x, decision_thresh):
         crown_filtered_constraints=crown_filtered_constraints)
 
     return verified_success, attack_images
+
+def check_NAP_conditions(input, model, nap_masks, nap_layers):
+    # import pdb; pdb.set_trace()
+    ip_shape = input.shape
+    input = input.view((-1, *ip_shape[-3:]))
+
+    activations = []
+    def get_activation(name):
+        def hook(model, input, output):
+            activations.append(output.detach())
+        return hook
+    
+    hook_handles = [model.__getattr__(layer).register_forward_hook(get_activation(layer)) for layer in nap_layers]
+
+    nap_valid = torch.ones((input.shape[0]), dtype=bool).to(input)
+
+    # for example_idx, example in enumerate(input):
+    activations.clear()
+    with torch.no_grad():
+        model(input)
+    res = True
+    for layer_idx, layer in enumerate(nap_masks):
+        temp = (activations[layer_idx][:, nap_masks[layer][0]] > 0.).all(dim=-1)
+        nap_valid = torch.logical_and(nap_valid, temp)
+    for layer_idx, layer in enumerate(nap_masks):
+        temp = (activations[layer_idx][:, nap_masks[layer][1]] <= 0.).all(dim=-1)
+        nap_valid = torch.logical_and(nap_valid, temp)
+    # nap_valid[example_idx] = res
+
+    for handle in hook_handles:
+        handle.remove()
+
+    nap_valid = nap_valid.view((*ip_shape[:-3], -1))
+    return nap_valid
+        
 

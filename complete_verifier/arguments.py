@@ -1046,4 +1046,7 @@ Globals = ReadOnlyDict({
     "out": {"idx": None, "pred": None, "attack_margin": None, "pred_adv": None,
             "init_crown_bounds": None, "init_alpha_crown": None,
             "refined_lb": None, "decisions": [], "results": 'timeout',
-            "time": None, "neurons_visited": None}})
+            "time": None, "neurons_visited": None},
+    "nap_masks": None,
+    "nap_layers": None,
+    "nap_label": None})
