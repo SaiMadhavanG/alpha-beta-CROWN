@@ -11,8 +11,8 @@ specification:
   epsilon: 0.1
   norm: .inf
 attack:
-  pgd_order: skip
-  # attack_func: attack_with_naps
+  pgd_order: after
+  attack_func: attack_with_naps
 solver:
   batch_size: 4096
 bab:

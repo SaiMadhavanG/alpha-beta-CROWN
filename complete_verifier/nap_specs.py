@@ -110,21 +110,21 @@ class NAPConstrainedBoundedModule(BoundedModule):
                         interm_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = torch.maximum(interm_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]], torch.tensor(0.))
                         interm_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = torch.minimum(interm_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]], torch.tensor(0.))
                     else:
-                        raise NotADirectoryError("Edge case encountered in bound assignment; interm")
+                        raise Exception("Edge case encountered in bound assignment; interm")
             if reference_bounds:
                 for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in reference_bounds:
                         reference_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = 0.
                         reference_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = 0.
                     else:
-                        raise NotADirectoryError("Edge case encountered in bound assignment; ref")
+                        raise Exception("Edge case encountered in bound assignment; ref")
             if aux_reference_bounds:
                 for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in aux_reference_bounds:
                         aux_reference_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = 0.
                         aux_reference_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = 0.
                     else:
-                        raise NotADirectoryError("Edge case encountered in bound assignment; aux_ref")
+                        raise Exception("Edge case encountered in bound assignment; aux_ref")
             
                     
 

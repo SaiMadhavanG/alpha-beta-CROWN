@@ -1,22 +1,22 @@
 # Configuration file for running the ACASXu benchmark (all properties).
 general:
-  root_path: ../../vnncomp2023_benchmarks/benchmarks/acasxu  # Please clone the vnncomp2023 repo first as it contains the benchmark.
+  root_path: ../../vnncomp2023_benchmarks/benchmarks/acasxu # Please clone the vnncomp2023 repo first as it contains the benchmark.
   csv_name: instances.csv
   enable_incomplete_verification: False
   loss_reduction_func: max
 data:
   num_outputs: 5
 solver:
-  batch_size: 1000  # Number of parallel domains to compute on GPU.
+  batch_size: 1000 # Number of parallel domains to compute on GPU.
   bound_prop_method: crown
   beta-crown:
-    iteration: 10  # Iterations for computing intermediate layer bounds.
+    iteration: 10 # Iterations for computing intermediate layer bounds.
   alpha-crown:
     iteration: 10
-    share_alphas: True  # This produces slightly looser bounds, but faster.
+    share_alphas: True # This produces slightly looser bounds, but faster.
 bab:
   branching:
-    method: naive  # Split on input space.
+    method: naive # Split on input space.
     candidates: 3
     input_split:
       enable: True
