@@ -36,6 +36,7 @@ class NAPConstrainedBoundedModule(BoundedModule):
     def set_label(self, label):
         # TODO exception handling
         self.label = str(label)
+        print(f"LABEL: {self.label}")
         arguments.Globals['nap_label'] = self.label
 
     @classmethod

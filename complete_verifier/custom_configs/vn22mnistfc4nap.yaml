@@ -1,0 +1,19 @@
+model:
+  onnx_path: ../../vnncomp2022_benchmarks/benchmarks/mnist_fc/onnx/mnist-net_256x4.onnx
+data:
+  dataset: MNIST
+  start: 0
+  end: 100
+  select_instance: [3, 2, 1, 18, 4, 8, 11, 0, 61, 7]
+  std: [1.]
+  mean: [0.]
+specification:
+  epsilon: 1.
+  norm: .inf
+attack:
+  pgd_order: after
+  attack_func: attack_with_naps
+solver:
+  batch_size: 4096
+bab:
+  timeout: 300
