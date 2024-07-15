@@ -122,6 +122,7 @@ class LiRPANet:
                 device=self.device
             )
             self.net.set_label((self.c[0][0] == 1.).nonzero()[0].item())
+        print(f"LABEL: {(self.c[0][0] == 1.).nonzero()[0].item()}")
         self.net = eval(general_args['graph_optimizer'])(self.net)
         self.root = self.net[self.net.root_names[0]]
 

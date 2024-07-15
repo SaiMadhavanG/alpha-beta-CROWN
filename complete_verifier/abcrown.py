@@ -48,7 +48,7 @@ from lp_test import compare_optimized_bounds_against_lp_bounds
 # NAP_PATH = "./naps/mnist-net_256x4_d99.json"
 # NAP_PATH = "./naps/mnist_fc_64x4_adv_1_d99.json"
 NAP_PATH = "./naps/marabou_cifar10_medium_d99.json"
-# NAP_PATH = None
+NAP_PATH = None
 
 
 class ABCROWN:

@@ -194,9 +194,11 @@ class NAPConstrainedBoundedModule(BoundedModule):
         # return [node.name for node in self.get_layers_requiring_bounds()]
         layers = []
         prev = None
+        prev_name = ""
         for name, module in self.named_modules():
             if isinstance(module, BoundRelu):
                 if isinstance(prev, BoundLinear):
-                    layers.append(name)
+                    layers.append(prev_name)
             prev = module
+            prev_name = name
         return layers
