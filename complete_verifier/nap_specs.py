@@ -5,6 +5,9 @@ import torch
 import json
 from auto_LiRPA.perturbations import PerturbationLpNorm
 import arguments
+from auto_LiRPA.operators.relu import BoundRelu
+from auto_LiRPA.operators.linear import BoundLinear
+
 
 # NAP_DEBUG = True
 
@@ -111,21 +114,37 @@ class NAPConstrainedBoundedModule(BoundedModule):
                         interm_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = torch.maximum(interm_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]], torch.tensor(0.))
                         interm_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = torch.minimum(interm_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]], torch.tensor(0.))
                     else:
-                        raise Exception("Edge case encountered in bound assignment; interm")
+                        if not reference_bounds:
+                            reference_bounds = {}
+                            lb = torch.full((width,), -float('inf')).to(self.device)
+                            lb[self.masks[self.label][layer][0]] = 0.
+                            ub = torch.full((width,), float('inf')).to(self.device)
+                            ub[self.masks[self.label][layer][1]] = 0.
+                            reference_bounds[layer] = (lb, ub)
+
             if reference_bounds:
                 for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in reference_bounds:
                         reference_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = 0.
                         reference_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = 0.
                     else:
-                        raise Exception("Edge case encountered in bound assignment; ref")
+                        lb = torch.full((width,), -float('inf')).to(self.device)
+                        lb[self.masks[self.label][layer][0]] = 0.
+                        ub = torch.full((width,), float('inf')).to(self.device)
+                        ub[self.masks[self.label][layer][1]] = 0.
+                        reference_bounds[layer] = (lb, ub)
+                        
             if aux_reference_bounds:
                 for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in aux_reference_bounds:
                         aux_reference_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = 0.
                         aux_reference_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = 0.
                     else:
-                        raise Exception("Edge case encountered in bound assignment; aux_ref")
+                        lb = torch.full((width,), -float('inf')).to(self.device)
+                        lb[self.masks[self.label][layer][0]] = 0.
+                        ub = torch.full((width,), float('inf')).to(self.device)
+                        ub[self.masks[self.label][layer][1]] = 0.
+                        aux_reference_bounds[layer] = (lb, ub)
             
                     
 
@@ -166,10 +185,18 @@ class NAPConstrainedBoundedModule(BoundedModule):
         return res
     
     def get_layer_names(self):
-        x = torch.empty(self.naps_config['input_shape'])
-        norm = float('inf')
-        eps = 0.1
-        ptb = PerturbationLpNorm(eps, norm)
-        bounded_x = BoundedTensor(x, ptb).to(self.device)
-        super().compute_bounds(bounded_x)
-        return [node.name for node in self.get_layers_requiring_bounds()]
+        # x = torch.empty(self.naps_config['input_shape'])
+        # norm = float('inf')
+        # eps = 0.1
+        # ptb = PerturbationLpNorm(eps, norm)
+        # bounded_x = BoundedTensor(x, ptb).to(self.device)
+        # super().compute_bounds(bounded_x)
+        # return [node.name for node in self.get_layers_requiring_bounds()]
+        layers = []
+        prev = None
+        for name, module in self.named_modules():
+            if isinstance(module, BoundRelu):
+                if isinstance(prev, BoundLinear):
+                    layers.append(name)
+            prev = module
+        return layers
