@@ -4,7 +4,7 @@ model:
 data:
   dataset: MNIST
   start: 0
-  end: 200
+  end: 10
   std: [1.]
   mean: [0.]
 specification:
@@ -17,3 +17,5 @@ solver:
   batch_size: 4096
 bab:
   timeout: 500
+naps:
+  naps_path: "./naps/mnist_fc_64x4_adv_1_d99.json"
