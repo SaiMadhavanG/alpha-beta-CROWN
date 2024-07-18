@@ -4,6 +4,10 @@ from auto_LiRPA import BoundedModule, BoundedTensor
 import torch
 import json
 from auto_LiRPA.perturbations import PerturbationLpNorm
+import arguments
+from auto_LiRPA.operators.relu import BoundRelu
+from auto_LiRPA.operators.linear import BoundLinear
+
 
 # NAP_DEBUG = True
 
@@ -27,12 +31,18 @@ class NAPConstrainedBoundedModule(BoundedModule):
 
         self.masks = self.create_masks()
 
+        arguments.Globals['nap_masks'] = self.masks
+        arguments.Globals['nap_layers'] = self.naps_config['layers']
+
         print("NAP Masks initialized")
 
     def set_label(self, label):
         # TODO exception handling
         self.label = str(label)
+        print(f"LABEL: {self.label}")
+        arguments.Globals['nap_label'] = self.label
 
+    @classmethod
     def parse_naps(self, file_path):
         # TODO exception handling
         with open(file_path) as f:
@@ -61,10 +71,10 @@ class NAPConstrainedBoundedModule(BoundedModule):
         for label in labels:
             masks[label] = {}
             # TODO fix this when NAP config changes
-            for layer in range(self.naps_config['layers']):
-                lb_mask = torch.zeros((self.naps_config['neurons_width'],), dtype=bool).to(self.device)
-                ub_mask = torch.zeros((self.naps_config['neurons_width'],), dtype=bool).to(self.device)
-                masks[label][self.layers_for_nap[layer]] = (lb_mask, ub_mask)
+            for layer_idx, layer in enumerate(self.naps_config['layers']):
+                lb_mask = torch.zeros((self.naps_config['layers'][layer],), dtype=bool).to(self.device)
+                ub_mask = torch.zeros((self.naps_config['layers'][layer],), dtype=bool).to(self.device)
+                masks[label][self.layers_for_nap[layer_idx]] = (lb_mask, ub_mask)
 
         for label in labels:
             for layer, neuron_idx in self.naps[label]["A"]["indices"]:
@@ -90,35 +100,51 @@ class NAPConstrainedBoundedModule(BoundedModule):
         # When there are no interm, reference or aux_reference bounds being passed, we can create a reference bound and set NAP constraints on that
         if not interm_bounds and not reference_bounds and not aux_reference_bounds:
             reference_bounds = {}
-            for layer in self.layers_for_nap:
-                lb = torch.full((self.naps_config['neurons_width'],), -float('inf')).to(self.device)
+            for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
+                lb = torch.full((width,), -float('inf')).to(self.device)
                 lb[self.masks[self.label][layer][0]] = 0.
-                ub = torch.full((self.naps_config['neurons_width'],), float('inf')).to(self.device)
+                ub = torch.full((width,), float('inf')).to(self.device)
                 ub[self.masks[self.label][layer][1]] = 0.
                 reference_bounds[layer] = (lb, ub)
         else:
             # If any of interm, reference or aux_reference bounds are passed, we apply the mask ans set the values to 0.
             if interm_bounds:
-                for layer in self.layers_for_nap:
+                for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in interm_bounds:
-                        interm_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]] = torch.maximum(interm_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]], torch.tensor(0.))
-                        interm_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]] = torch.minimum(interm_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]], torch.tensor(0.))
+                        interm_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = torch.maximum(interm_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]], torch.tensor(0.))
+                        interm_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = torch.minimum(interm_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]], torch.tensor(0.))
                     else:
-                        raise Exception("I sincerely hope this error never occurs; interm")
+                        if not reference_bounds:
+                            reference_bounds = {}
+                            lb = torch.full((width,), -float('inf')).to(self.device)
+                            lb[self.masks[self.label][layer][0]] = 0.
+                            ub = torch.full((width,), float('inf')).to(self.device)
+                            ub[self.masks[self.label][layer][1]] = 0.
+                            reference_bounds[layer] = (lb, ub)
+
             if reference_bounds:
-                for layer in self.layers_for_nap:
+                for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in reference_bounds:
-                        reference_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]] = 0.
-                        reference_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]] = 0.
+                        reference_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = 0.
+                        reference_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = 0.
                     else:
-                        raise Exception("I sincerely hope this error never occurs; ref")
+                        lb = torch.full((width,), -float('inf')).to(self.device)
+                        lb[self.masks[self.label][layer][0]] = 0.
+                        ub = torch.full((width,), float('inf')).to(self.device)
+                        ub[self.masks[self.label][layer][1]] = 0.
+                        reference_bounds[layer] = (lb, ub)
+                        
             if aux_reference_bounds:
-                for layer in self.layers_for_nap:
+                for layer, width in zip(self.layers_for_nap, self.naps_config['layers'].values()):
                     if layer in aux_reference_bounds:
-                        aux_reference_bounds[layer][0].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][0]] = 0.
-                        aux_reference_bounds[layer][1].view((-1, self.naps_config['neurons_width']))[:, self.masks[self.label][layer][1]] = 0.
+                        aux_reference_bounds[layer][0].view((-1, width))[:, self.masks[self.label][layer][0]] = 0.
+                        aux_reference_bounds[layer][1].view((-1, width))[:, self.masks[self.label][layer][1]] = 0.
                     else:
-                        raise Exception("I sincerely hope this error never occurs; aux_ref")
+                        lb = torch.full((width,), -float('inf')).to(self.device)
+                        lb[self.masks[self.label][layer][0]] = 0.
+                        ub = torch.full((width,), float('inf')).to(self.device)
+                        ub[self.masks[self.label][layer][1]] = 0.
+                        aux_reference_bounds[layer] = (lb, ub)
             
                     
 
@@ -159,10 +185,20 @@ class NAPConstrainedBoundedModule(BoundedModule):
         return res
     
     def get_layer_names(self):
-        x = torch.empty(self.naps_config['input_shape'])
-        norm = float('inf')
-        eps = 0.1
-        ptb = PerturbationLpNorm(eps, norm)
-        bounded_x = BoundedTensor(x, ptb).to(self.device)
-        super().compute_bounds(bounded_x)
-        return [node.name for node in self.get_layers_requiring_bounds()]
+        # x = torch.empty(self.naps_config['input_shape'])
+        # norm = float('inf')
+        # eps = 0.1
+        # ptb = PerturbationLpNorm(eps, norm)
+        # bounded_x = BoundedTensor(x, ptb).to(self.device)
+        # super().compute_bounds(bounded_x)
+        # return [node.name for node in self.get_layers_requiring_bounds()]
+        layers = []
+        prev = None
+        prev_name = ""
+        for name, module in self.named_modules():
+            if isinstance(module, BoundRelu):
+                if isinstance(prev, BoundLinear):
+                    layers.append(prev_name)
+            prev = module
+            prev_name = name
+        return layers

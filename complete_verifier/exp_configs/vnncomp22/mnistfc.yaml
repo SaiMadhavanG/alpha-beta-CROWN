@@ -4,10 +4,10 @@ general:
   csv_name: instances.csv
   complete_verifier: bab-refine
 model:
-  input_shape: [-1, 1, 28, 28]  # This onnx model has input shape [-1, 784] which is not compatible with our MIP solution
+  input_shape: [-1, 1, 28, 28] # This onnx model has input shape [-1, 784] which is not compatible with our MIP solution
 data:
   start: 30
-  end: 90
+  end: 60
 solver:
   batch_size: 4096
   beta-crown:

@@ -45,8 +45,10 @@ from cuts.cut_utils import terminate_mip_processes, terminate_mip_processes_by_c
 from lp_test import compare_optimized_bounds_against_lp_bounds
 
 # TODO Move this to config
-NAP_PATH = "./naps/mnist_fc_64x4_adv_1_d99.json"
-# NAP_PATH = None
+# NAP_PATH = "./naps/mnist-net_256x4_d99.json"
+# NAP_PATH = "./naps/mnist_fc_64x4_adv_1_d99.json"
+
+
 
 
 class ABCROWN:
@@ -63,6 +65,7 @@ class ABCROWN:
             else:
                 args.append(f'--{k}={v}')
         arguments.Config.parse_config(args)
+        NAP_PATH = arguments.Config['naps']['naps_path']
 
     def incomplete_verifier(
         self,
@@ -117,7 +120,7 @@ class ABCROWN:
             rhs = torch.tensor(specs[0][1], dtype=data.dtype, device=data.device).unsqueeze(0)
             stop_func = stop_criterion_batch_any(rhs)
 
-        model = LiRPANet(model_ori, in_size=data.shape, c=c, nap_path=NAP_PATH)
+        model = LiRPANet(model_ori, in_size=data.shape, c=c, nap_path=arguments.Config['naps']['naps_path'])
 
         bound_prop_method = arguments.Config['solver']['bound_prop_method']
         if len(apply_output_constraints_to) > 0:
@@ -252,7 +255,7 @@ class ABCROWN:
             self.model = LiRPANet(
                 model, c=c, cplex_processes=cplex_processes,
                 in_size=(data_lb.shape if not len(targets) > 1
-                        else [len(targets)] + list(data_lb.shape[1:])), nap_path=NAP_PATH)
+                        else [len(targets)] + list(data_lb.shape[1:])), nap_path=arguments.Config['naps']['naps_path'])
             if not model_incomplete:
                 print_model(self.model.net)
 
@@ -508,8 +511,12 @@ class ABCROWN:
     def attack(self, model_ori, x, vnnlib, verified_status, verified_success):
         if arguments.Config['model']['with_jacobian']:
             print('Using BoundedModule for attack for this model with JacobianOP')
-            model = LiRPANet(model_ori, in_size=x.shape, nap_path = NAP_PATH).net
+            model = LiRPANet(model_ori, in_size=x.shape, nap_path = arguments.Config['naps']['naps_path']).net
         else:
+            if arguments.Config['attack']['attack_func'] == "attack_with_naps":
+                input_x, specs = vnnlib[0]
+                c = torch.tensor(specs[0][0]).unsqueeze(0)
+                LiRPANet(model_ori, in_size=x.shape, c=c, nap_path = arguments.Config['naps']['naps_path'])
             model = model_ori
         return attack(model, x, vnnlib, verified_status, verified_success)
 

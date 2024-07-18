@@ -1,0 +1,14 @@
+# Configuration file for running the mnist_fc benchmark (large models).
+general:
+  root_path: ../../vnncomp2022_benchmarks/benchmarks/mnist_fc
+  csv_name: instances.csv
+model:
+  input_shape: [-1, 1, 28, 28] # This onnx model has input shape [-1, 784] which is not compatible with our MIP solution
+data:
+  start: 30
+  end: 60
+attack:
+  pgd_order: after
+  # attack_func: attack_with_naps
+solver:
+  batch_size: 4096

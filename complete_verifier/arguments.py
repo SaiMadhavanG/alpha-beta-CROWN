@@ -848,6 +848,11 @@ class ConfigHandler:
         self.add_argument("--print_verbose_decisions", action="store_true",
                           help="Print more detailed information about branching decisions",
                           hierarchy=h + ['print_verbose_decisions'], private=True)
+        
+        h = ["naps"]
+        self.add_argument('--naps_path', type=str, default=None,
+                          help='Path to json file containing Neural Activation Patterns (NAPs) constraints.',
+                          hierarchy=h + ['naps_path'])
 
     def update_arguments(self):
         """Adaptively tune arguments."""
@@ -1046,4 +1051,7 @@ Globals = ReadOnlyDict({
     "out": {"idx": None, "pred": None, "attack_margin": None, "pred_adv": None,
             "init_crown_bounds": None, "init_alpha_crown": None,
             "refined_lb": None, "decisions": [], "results": 'timeout',
-            "time": None, "neurons_visited": None}})
+            "time": None, "neurons_visited": None},
+    "nap_masks": None,
+    "nap_layers": None,
+    "nap_label": None})

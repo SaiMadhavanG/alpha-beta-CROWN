@@ -11,8 +11,11 @@ specification:
   epsilon: 0.1
   norm: .inf
 attack:
-  pgd_order: skip
+  pgd_order: after
+  attack_func: attack_with_naps
 solver:
   batch_size: 4096
 bab:
   timeout: 500
+naps:
+  naps_path: "./naps/mnist_fc_64x4_adv_1_d99.json"
