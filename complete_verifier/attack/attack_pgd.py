@@ -357,6 +357,8 @@ def test_conditions(input, output, C_mat, rhs_mat, cond_mat, same_number_const, 
             return res, idx
 
     else:
+        if naps:
+            raise NotImplementedError("Same number const case not handled for when NAPs are considered")
         output = output.repeat_interleave(torch.tensor(cond_mat[0]).to(output.device), dim=2)
         # [num_example, num_restarts, num_spec, num_output]
 
@@ -777,6 +779,24 @@ def pgd_attack_with_general_specs(model, X, data_min, data_max, C_mat, rhs_mat,
     else:
         return best_delta, delta, best_loss
     
+class NAPLoss(nn.Module):
+    def __init__(self, epsilon):
+        super(NAPLoss, self).__init__()
+        self.epsilon = epsilon
+
+    def forward(self, layer_output, active_neurons, inactive_neurons):
+        below_zero_violations = (layer_output >= 0).float() * inactive_neurons
+        above_zero_violations = (layer_output <= 0).float() * active_neurons
+
+        below_zero_target = torch.full_like(layer_output, -self.epsilon) 
+        above_zero_target = torch.full_like(layer_output, self.epsilon) 
+
+        below_zero_loss = nn.functional.mse_loss(layer_output * below_zero_violations, below_zero_target * below_zero_violations, reduction='sum')
+        above_zero_loss = nn.functional.mse_loss(layer_output * above_zero_violations, above_zero_target * above_zero_violations, reduction='sum')
+
+        total_loss = below_zero_loss + above_zero_loss
+
+        return total_loss
 
 def pgd_attack_with_naps(model, X, data_min, data_max, C_mat, rhs_mat,
                                   cond_mat, same_number_const, alpha,
@@ -873,8 +893,27 @@ def pgd_attack_with_naps(model, X, data_min, data_max, C_mat, rhs_mat,
 
     early_stopped = False
 
+    naploss = NAPLoss(0.1)
+
+    nap_losses = []
+    
+    def get_losses(layer_idx, label):
+        layers = list(arguments.Globals['nap_masks'][label].keys())
+        nap = arguments.Globals['nap_masks'][label][layers[layer_idx]]
+        def hook(model, input, output):
+            loss = naploss(output, nap[0], nap[1])
+            nap_losses.append(loss)
+        return hook
+    
+    layers = list(arguments.Globals['nap_layers'].keys())
+    hook_handles = []
+    for layer_idx, layer in enumerate(layers):
+        hook = model.__getattr__(layer).register_forward_hook(get_losses(layer_idx, arguments.Globals['nap_label']))
+        hook_handles.append(hook)
+
     for _ in range(attack_iters):
         inputs = normalize(X + delta)
+        nap_losses = []
         output = model(inputs.view(-1, *input_shape[1:])).view(
             input_shape[0], *extra_dim, num_classes)
 
@@ -894,7 +933,9 @@ def pgd_attack_with_naps(model, X, data_min, data_max, C_mat, rhs_mat,
         # shape of loss: [num_example, num_restarts, num_or_spec]
         # or float when gama_lambda > 0
 
-        loss_gama.sum().backward()
+        nap_loss = -sum(nap_losses)
+        total_loss = nap_loss + loss_gama.sum()
+        total_loss.backward()
 
         with torch.no_grad():
             # Save the best loss so far.
@@ -953,6 +994,9 @@ def pgd_attack_with_naps(model, X, data_min, data_max, C_mat, rhs_mat,
             d = delta + alpha * torch.sign(delta.grad)
             d = torch.max(torch.min(d, delta_upper_limit), delta_lower_limit)
             delta = d.detach().requires_grad_()
+
+    for hook_handle in hook_handles:
+        hook_handle.remove()
 
     if not early_stopped and 'Customized' in arguments.Config["attack"]["early_stop_condition"]:
         test_input = X[:, 0, 0, :] + best_delta

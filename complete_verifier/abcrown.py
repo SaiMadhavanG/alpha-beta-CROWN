@@ -44,12 +44,6 @@ from read_vnnlib import read_vnnlib
 from cuts.cut_utils import terminate_mip_processes, terminate_mip_processes_by_c_matching
 from lp_test import compare_optimized_bounds_against_lp_bounds
 
-# TODO Move this to config
-# NAP_PATH = "./naps/mnist-net_256x4_d99.json"
-# NAP_PATH = "./naps/mnist_fc_64x4_adv_1_d99.json"
-
-
-
 
 class ABCROWN:
     def __init__(self, args=None, **kwargs):
