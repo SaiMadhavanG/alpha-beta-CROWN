@@ -1659,7 +1659,7 @@ def attack_with_naps(model, x, data_min, data_max,
     print(f'Attack finished in {attack_time:.4f} seconds.')
     if test_conditions(attack_image.unsqueeze(1), attack_output.unsqueeze(1),
                        C_mat, rhs_mat, cond_mat, same_number_const,
-                       data_max, data_min, naps=True, model=model).all():
+                       data_max, data_min, naps=True, model=model).all() or early_stopped:
         print("PGD attack succeeded!")
         return True, attack_image.detach(), attack_margin.detach(), all_adv_candidates
     else:
